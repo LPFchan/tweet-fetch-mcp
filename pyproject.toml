@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tweet-fetch-mcp"
+version = "0.1.0"
+description = "MCP server for fetching tweet data from fxtwitter API"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx[http2]>=0.28.1,<1.0",
+  "mcp>=1.27.1,<2.0",
+  "starlette>=0.47.0,<1.0",
+  "uvicorn>=0.35.0,<1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3.0,<9.0"]
+
+[project.scripts]
+tweet-fetch-mcp = "tweet_fetch_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tweet_fetch_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

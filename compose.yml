@@ -1,0 +1,17 @@
+services:
+  tweet-fetch-mcp:
+    build: .
+    container_name: tweet-fetch-mcp
+    user: "1000:1000"
+    mem_limit: 256m
+    memswap_limit: 256m
+    oom_score_adj: 500
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      TWEET_FETCH_AUTH_TOKEN: ${TWEET_FETCH_AUTH_TOKEN:-}
+      ALLOWED_ORIGINS: https://*.lost.plus
+      FETCH_TIMEOUT_SECONDS: 15
