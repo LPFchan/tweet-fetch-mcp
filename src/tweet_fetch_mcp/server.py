@@ -184,8 +184,64 @@ mcp = FastMCP(
 async def fetch_tweet(tweet_url: str) -> dict:
     """Fetch tweet data from a Twitter/X.com URL using the fxtwitter API.
     Accepts both x.com and twitter.com URLs, including ones with /photo/N suffixes.
+    Returns the full fxtwitter API JSON response.
     """
     return await _require_service().fetch_tweet(tweet_url)
+
+
+@mcp.tool()
+async def get_tweet_text(tweet_url: str) -> str:
+    """Extract just the tweet text from a Twitter/X.com URL.
+    Returns the clean text body without metadata (replaces media links with alt text).
+    """
+    data = await _require_service().fetch_tweet(tweet_url)
+    return data["tweet"]["text"]
+
+
+@mcp.tool()
+async def get_tweet_media(tweet_url: str) -> list[dict]:
+    """Extract media URLs and metadata from a Twitter/X.com URL.
+    Returns a list of media objects with type, url, width, height, and optional metadata.
+    """
+    data = await _require_service().fetch_tweet(tweet_url)
+    tweet = data["tweet"]
+    media = tweet.get("media")
+    if not media or not media.get("all"):
+        return []
+    return [
+        {
+            "type": m.get("type"),
+            "url": m.get("url"),
+            "width": m.get("width"),
+            "height": m.get("height"),
+        }
+        for m in media["all"]
+    ]
+
+
+@mcp.tool()
+async def get_tweet_author(tweet_url: str) -> dict:
+    """Get the author/profile information from a Twitter/X.com tweet URL.
+    Returns screen_name, name, followers, following, likes, description, avatar, banner, joined date, verification status, and location.
+    """
+    data = await _require_service().fetch_tweet(tweet_url)
+    return data["tweet"]["author"]
+
+
+@mcp.tool()
+async def get_tweet_stats(tweet_url: str) -> dict:
+    """Get engagement statistics from a Twitter/X.com tweet URL.
+    Returns likes, retweets, replies, bookmarks, quotes, and views.
+    """
+    tweet = (await _require_service().fetch_tweet(tweet_url))["tweet"]
+    return {
+        "likes": tweet.get("likes", 0),
+        "retweets": tweet.get("retweets", 0),
+        "replies": tweet.get("replies", 0),
+        "bookmarks": tweet.get("bookmarks", 0),
+        "quotes": tweet.get("quotes", 0),
+        "views": tweet.get("views", 0),
+    }
 
 
 def _require_service() -> FxTwitterClient:
@@ -200,7 +256,13 @@ async def index(_: object) -> JSONResponse:
             "name": "tweet-fetch-mcp",
             "mcp_path": "/mcp",
             "healthz": "/healthz",
-            "tools": ["fetch_tweet"],
+            "tools": [
+                "fetch_tweet",
+                "get_tweet_text",
+                "get_tweet_media",
+                "get_tweet_author",
+                "get_tweet_stats",
+            ],
         }
     )
 
