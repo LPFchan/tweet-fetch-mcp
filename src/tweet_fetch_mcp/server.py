@@ -141,14 +141,13 @@ class FxTwitterClient:
             headers={"User-Agent": _DEFAULT_USER_AGENT},
         )
 
-    async def fetch_tweet(self, tweet_url: str) -> dict:
+    async def fetch_conversation(self, tweet_url: str) -> dict:
         match = _TWEET_URL_RE.search(tweet_url)
         if not match:
             raise ValueError(f"Invalid tweet URL: {tweet_url}")
 
-        username = match.group(1)
         status_id = match.group(2)
-        api_url = f"https://api.fxtwitter.com/{username}/status/{status_id}"
+        api_url = f"https://api.fxtwitter.com/2/conversation/{status_id}"
 
         resp = await self._client.get(api_url)
         resp.raise_for_status()
@@ -156,6 +155,9 @@ class FxTwitterClient:
         if data.get("code") != 200:
             raise RuntimeError(f"fxtwitter API error: {data.get('message', 'unknown')}")
         return data
+
+    async def fetch_tweet(self, tweet_url: str) -> dict:
+        return await self.fetch_conversation(tweet_url)
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -191,9 +193,9 @@ mcp = FastMCP(
 async def fetch_tweet(tweet_url: str) -> dict:
     """Fetch tweet data from a Twitter/X.com URL using the fxtwitter API.
     Accepts both x.com and twitter.com URLs, including ones with /photo/N suffixes.
-    Returns the full fxtwitter API JSON response.
+    Returns the full v2 conversation response including status, thread, replies, author, and cursor.
     """
-    return await _require_service().fetch_tweet(tweet_url)
+    return await _require_service().fetch_conversation(tweet_url)
 
 
 @mcp.tool()
@@ -201,8 +203,8 @@ async def get_tweet_text(tweet_url: str) -> str:
     """Extract just the tweet text from a Twitter/X.com URL.
     Returns the clean text body without metadata (replaces media links with alt text).
     """
-    data = await _require_service().fetch_tweet(tweet_url)
-    return data["tweet"]["text"]
+    data = await _require_service().fetch_conversation(tweet_url)
+    return data["status"]["text"]
 
 
 @mcp.tool()
@@ -210,9 +212,9 @@ async def get_tweet_media(tweet_url: str) -> list[dict]:
     """Extract media URLs and metadata from a Twitter/X.com URL.
     Returns a list of media objects with type, url, width, height, and optional metadata.
     """
-    data = await _require_service().fetch_tweet(tweet_url)
-    tweet = data["tweet"]
-    media = tweet.get("media")
+    data = await _require_service().fetch_conversation(tweet_url)
+    status = data["status"]
+    media = status.get("media")
     if not media or not media.get("all"):
         return []
     return [
@@ -231,8 +233,8 @@ async def get_tweet_author(tweet_url: str) -> dict:
     """Get the author/profile information from a Twitter/X.com tweet URL.
     Returns screen_name, name, followers, following, likes, description, avatar, banner, joined date, verification status, and location.
     """
-    data = await _require_service().fetch_tweet(tweet_url)
-    return data["tweet"]["author"]
+    data = await _require_service().fetch_conversation(tweet_url)
+    return data["author"]
 
 
 @mcp.tool()
@@ -240,15 +242,33 @@ async def get_tweet_stats(tweet_url: str) -> dict:
     """Get engagement statistics from a Twitter/X.com tweet URL.
     Returns likes, retweets, replies, bookmarks, quotes, and views.
     """
-    tweet = (await _require_service().fetch_tweet(tweet_url))["tweet"]
+    status = (await _require_service().fetch_conversation(tweet_url))["status"]
     return {
-        "likes": tweet.get("likes", 0),
-        "retweets": tweet.get("retweets", 0),
-        "replies": tweet.get("replies", 0),
-        "bookmarks": tweet.get("bookmarks", 0),
-        "quotes": tweet.get("quotes", 0),
-        "views": tweet.get("views", 0),
+        "likes": status.get("likes", 0),
+        "retweets": status.get("retweets", 0) or status.get("reposts", 0),
+        "replies": status.get("replies", 0),
+        "bookmarks": status.get("bookmarks", 0),
+        "quotes": status.get("quotes", 0),
+        "views": status.get("views", 0),
     }
+
+
+@mcp.tool()
+async def get_thread(tweet_url: str) -> list[dict]:
+    """Get the author's self-reply thread from a Twitter/X.com tweet URL.
+    Returns the full unrolled thread (the author's own reply chain, walking all the way to root).
+    """
+    data = await _require_service().fetch_conversation(tweet_url)
+    return data.get("thread") or []
+
+
+@mcp.tool()
+async def get_replies(tweet_url: str) -> list[dict]:
+    """Get replies to a tweet from a Twitter/X.com tweet URL.
+    Returns replies from other users, ranked by likes.
+    """
+    data = await _require_service().fetch_conversation(tweet_url)
+    return data.get("replies") or []
 
 
 def _require_service() -> FxTwitterClient:
@@ -269,6 +289,8 @@ async def index(_: object) -> JSONResponse:
                 "get_tweet_media",
                 "get_tweet_author",
                 "get_tweet_stats",
+                "get_thread",
+                "get_replies",
             ],
         }
     )
