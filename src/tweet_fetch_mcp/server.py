@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import contextlib
 import fnmatch
-import json
 import os
 import re
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import httpx
 from mcp.server import CacheHint, MCPServer
@@ -78,48 +77,6 @@ class _CORSMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_cors)
-
-
-class _AuthMiddleware:
-    def __init__(self, app, tokens: list[str] | None):
-        self.app = app
-        self.tokens = set(tokens) if tokens else None
-
-    async def __call__(self, scope, receive, send):
-        if self.tokens is None:
-            await self.app(scope, receive, send)
-            return
-
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        path = scope.get("path", "")
-        if path == "/healthz":
-            await self.app(scope, receive, send)
-            return
-
-        headers = dict(scope.get("headers", []))
-        auth_header = headers.get(b"authorization", b"").decode()
-
-        if auth_header.startswith("Bearer ") and auth_header[7:] in self.tokens:
-            await self.app(scope, receive, send)
-            return
-
-        token_values = parse_qs(scope.get("query_string", b"").decode()).get("token", [])
-        if self.tokens & set(token_values):
-            await self.app(scope, receive, send)
-            return
-
-        first_segment = path.strip("/").split("/")[0] if path.strip("/") else ""
-        if first_segment in self.tokens:
-            scope["path"] = "/" + "/".join(path.strip("/").split("/")[1:])
-            await self.app(scope, receive, send)
-            return
-
-        body = json.dumps({"error": "Unauthorized"}).encode()
-        await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"application/json")]})
-        await send({"type": "http.response.body", "body": body})
 
 
 _TWEET_URL_RE = re.compile(
@@ -311,21 +268,13 @@ async def health_route(request):
     return await healthz(None)
 
 
-_raw_tokens = os.environ.get("TWEET_FETCH_AUTH_TOKEN")
-_auth_tokens: list[str] | None = None
-if _raw_tokens:
-    _auth_tokens = [t.strip() for t in _raw_tokens.split(",") if t.strip()]
-
-_cors_auth_app = _CORSMiddleware(
-    _AuthMiddleware(
-        mcp.streamable_http_app(
-            streamable_http_path="/mcp",
-            json_response=True,
-            stateless_http=True,
-            host=os.environ.get("HOST", "0.0.0.0"),
-            transport_security=_build_transport_security(),
-        ),
-        _auth_tokens,
+_http_app = _CORSMiddleware(
+    mcp.streamable_http_app(
+        streamable_http_path="/mcp",
+        json_response=True,
+        stateless_http=True,
+        host=os.environ.get("HOST", "0.0.0.0"),
+        transport_security=_build_transport_security(),
     )
 )
 
@@ -338,7 +287,7 @@ async def app(scope, receive, send):
                 scope["path"] = "/mcp"
             elif path != "/mcp" and path.rstrip("/") == "/mcp":
                 scope["path"] = "/mcp"
-    await _cors_auth_app(scope, receive, send)
+    await _http_app(scope, receive, send)
 
 
 def main() -> None:

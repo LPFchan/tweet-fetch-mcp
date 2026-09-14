@@ -6,6 +6,12 @@ The HTTP endpoint uses the official MCP Python SDK v2 and supports the
 `2026-07-28` stateless protocol via `server/discover`, with a stateless legacy
 fallback for clients that still use `initialize`.
 
+Production authentication is provided by the shared Common Auth gateway at
+`tweet.lost.plus`, using the `tweet-fetch` scope. Send a Common Auth token as
+`Authorization: Bearer <token>` or `X-API-Key: <token>`. The backend does not
+authenticate requests itself and must remain bound to localhost behind the
+gateway.
+
 ## Tools
 
 - `fetch_tweet(tweet_url)` — Returns the full fxtwitter v2 conversation response (status, thread, replies, author, cursor).
