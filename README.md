@@ -10,7 +10,8 @@ Production authentication is provided by the shared Common Auth gateway at
 `tweet.lost.plus`, using the `tweet-fetch` scope. Send a Common Auth token as
 `Authorization: Bearer <token>` or `X-API-Key: <token>`. The backend does not
 authenticate requests itself and must remain bound to localhost behind the
-gateway.
+gateway. Standalone runs default to loopback; the container explicitly binds
+`0.0.0.0` only inside its loopback-published Docker boundary.
 
 ## Tools
 
