@@ -1,5 +1,5 @@
 name = "tweet-fetch"
-main = "src/index.ts"
+main = "index.ts"
 compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
 
