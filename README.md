@@ -2,6 +2,12 @@
 
 MCP server that converts Twitter/X.com tweet URLs into fxtwitter API JSON.
 
+Two runtimes:
+
+- **Python** (`src/`) — runs on OCI behind the auth gateway. Original implementation.
+- **Cloudflare Workers** (`worker/`) — runs on Cloudflare's edge. Survives OCI
+  outages. Validates tokens directly against auth.lost.plus (whoami + introspect).
+
 The HTTP endpoint uses the official MCP Python SDK v2 and supports the
 `2026-07-28` stateless protocol via `server/discover`, with a stateless legacy
 fallback for clients that still use `initialize`.
