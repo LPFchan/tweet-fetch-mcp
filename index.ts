@@ -1,9 +1,8 @@
+import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server";
+
 // tweet-fetch Worker: MCP server on Cloudflare Workers, port of the
 // Python tweet-fetch-mcp (fxtwitter backend). Authenticates machine tokens
 // directly against Common Auth (whoami) instead of the loopback gateway.
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 
 export interface Env {
@@ -129,86 +128,51 @@ function text(value: unknown): { content: Array<{ type: "text"; text: string }> 
 function buildServer(env: Env): McpServer {
   const server = new McpServer({ name: "tweet-fetch", version: "0.1.0" });
 
-  server.tool(
-    "fetch_tweet",
-    "Fetch tweet data from a Twitter/X.com URL using the fxtwitter API. Accepts x.com and twitter.com URLs including /photo/N suffixes. Returns the full v2 conversation response.",
-    { tweet_url: tweetUrlParam },
-    async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
-      return text(data);
-    },
-  );
+  server.registerTool("fetch_tweet", { description: "Fetch tweet data from a Twitter/X.com URL using the fxtwitter API. Accepts x.com and twitter.com URLs including /photo/N suffixes. Returns the full v2 conversation response.", inputSchema: z.object({ tweet_url: tweetUrlParam }) }, async ({ tweet_url }) => {
+              const data = await fetchConversation(env, tweet_url);
+              return text(data);
+            });
 
-  server.tool(
-    "get_tweet_text",
-    "Extract just the tweet text from a Twitter/X.com URL.",
-    { tweet_url: tweetUrlParam },
-    async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
-      return text(data.status.text);
-    },
-  );
+  server.registerTool("get_tweet_text", { description: "Extract just the tweet text from a Twitter/X.com URL.", inputSchema: z.object({ tweet_url: tweetUrlParam }) }, async ({ tweet_url }) => {
+              const data = await fetchConversation(env, tweet_url);
+              return text(data.status.text);
+            });
 
-  server.tool(
-    "get_tweet_media",
-    "Extract media URLs and metadata from a Twitter/X.com URL.",
-    { tweet_url: tweetUrlParam },
-    async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
-      const all = data.status?.media?.all ?? [];
-      return text(
-        all.map((m: any) => ({ type: m.type, url: m.url, width: m.width, height: m.height })),
-      );
-    },
-  );
+  server.registerTool("get_tweet_media", { description: "Extract media URLs and metadata from a Twitter/X.com URL.", inputSchema: z.object({ tweet_url: tweetUrlParam }) }, async ({ tweet_url }) => {
+              const data = await fetchConversation(env, tweet_url);
+              const all = data.status?.media?.all ?? [];
+              return text(
+                all.map((m: any) => ({ type: m.type, url: m.url, width: m.width, height: m.height })),
+              );
+            });
 
-  server.tool(
-    "get_tweet_author",
-    "Get the author/profile information from a Twitter/X.com tweet URL.",
-    { tweet_url: tweetUrlParam },
-    async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
-      return text(data.author);
-    },
-  );
+  server.registerTool("get_tweet_author", { description: "Get the author/profile information from a Twitter/X.com tweet URL.", inputSchema: z.object({ tweet_url: tweetUrlParam }) }, async ({ tweet_url }) => {
+              const data = await fetchConversation(env, tweet_url);
+              return text(data.author);
+            });
 
-  server.tool(
-    "get_tweet_stats",
-    "Get engagement statistics from a Twitter/X.com tweet URL.",
-    { tweet_url: tweetUrlParam },
-    async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
-      const s = data.status;
-      return text({
-        likes: s.likes ?? 0,
-        retweets: s.retweets ?? s.reposts ?? 0,
-        replies: s.replies ?? 0,
-        bookmarks: s.bookmarks ?? 0,
-        quotes: s.quotes ?? 0,
-        views: s.views ?? 0,
-      });
-    },
-  );
+  server.registerTool("get_tweet_stats", { description: "Get engagement statistics from a Twitter/X.com tweet URL.", inputSchema: z.object({ tweet_url: tweetUrlParam }) }, async ({ tweet_url }) => {
+              const data = await fetchConversation(env, tweet_url);
+              const s = data.status;
+              return text({
+                likes: s.likes ?? 0,
+                retweets: s.retweets ?? s.reposts ?? 0,
+                replies: s.replies ?? 0,
+                bookmarks: s.bookmarks ?? 0,
+                quotes: s.quotes ?? 0,
+                views: s.views ?? 0,
+              });
+            });
 
-  server.tool(
-    "get_thread",
-    "Get the author's self-reply thread from a Twitter/X.com tweet URL.",
-    { tweet_url: tweetUrlParam },
-    async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
-      return text(data.thread ?? []);
-    },
-  );
+  server.registerTool("get_thread", { description: "Get the author's self-reply thread from a Twitter/X.com tweet URL.", inputSchema: z.object({ tweet_url: tweetUrlParam }) }, async ({ tweet_url }) => {
+              const data = await fetchConversation(env, tweet_url);
+              return text(data.thread ?? []);
+            });
 
-  server.tool(
-    "get_replies",
-    "Get replies to a tweet from a Twitter/X.com tweet URL, ranked by likes.",
-    { tweet_url: tweetUrlParam },
-    async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
-      return text(data.replies ?? []);
-    },
-  );
+  server.registerTool("get_replies", { description: "Get replies to a tweet from a Twitter/X.com tweet URL, ranked by likes.", inputSchema: z.object({ tweet_url: tweetUrlParam }) }, async ({ tweet_url }) => {
+              const data = await fetchConversation(env, tweet_url);
+              return text(data.replies ?? []);
+            });
 
   return server;
 }
