@@ -3,16 +3,52 @@ main = "index.ts"
 compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Not on a workers.dev subdomain. This is load-bearing rather than tidy:
+# wrangler defaults `workers_dev` to `routes.length === 0`, so removing the
+# routes below would otherwise publish this Worker at
+# tweet-fetch.<subdomain>.workers.dev -- a public entrance to a Worker whose
+# whole security model is that it has none. It would fail closed (no identity
+# headers, so 500 on everything), but "reachable only through the gateway's
+# service binding" would stop being true.
+workers_dev = false
+
 [vars]
-AUTH_URL = "https://auth.lost.plus"
-TOKEN_SCOPE = "tweet-fetch"
 FETCH_TIMEOUT_MS = "15000"
 
-# Route tweet.lost.plus MCP traffic to this Worker.
-# The OCI gateway still handles other paths (healthz, root) until DNS is cut over.
-routes = [
-  { pattern = "tweet.lost.plus/mcp", zone_name = "lost.plus" },
-  { pattern = "tweet.lost.plus/mcp/*", zone_name = "lost.plus" },
-  { pattern = "tweet.lost.plus/healthz", zone_name = "lost.plus" },
-  { pattern = "tweet.lost.plus/.well-known/oauth-protected-resource*", zone_name = "lost.plus" },
-]
+# AUTH_URL and TOKEN_SCOPE are gone with the code that read them. This Worker
+# no longer talks to auth.lost.plus; the gateway does, and the scope now lives
+# in the gateway's route table (auth/gateway/config/cloudflare.gateway.json).
+
+# ---------------------------------------------------------------------------
+# NO ROUTES. THIS IS DELIBERATE -- DO NOT RESTORE THEM WITHOUT READING THIS.
+# ---------------------------------------------------------------------------
+#
+# This Worker is a route-less backend. It is reached only through the
+# TWEET_FETCH service binding declared by the `auth-gateway` Worker, which is
+# what makes it unreachable from the public internet and what lets it trust the
+# x-lost-plus-* headers it is given.
+#
+# The four patterns it used to hold, which the gateway Worker takes over:
+#
+#   tweet.lost.plus/mcp
+#   tweet.lost.plus/mcp/*
+#   tweet.lost.plus/healthz
+#   tweet.lost.plus/.well-known/oauth-protected-resource*
+#
+# Deleting them from this file does NOT detach them. wrangler only publishes a
+# route list when the list is non-empty, so an absent list means it skips the
+# call and Cloudflare keeps pointing all four at this Worker. Deploying this
+# code therefore leaves those four paths attached to a service that now refuses
+# every request that does not carry gateway identity headers -- which is every
+# request arriving straight off a route. tweet.lost.plus goes to 500 until the
+# routes are moved.
+#
+# It fails closed rather than open, which is the intended direction, but it is
+# still an outage, and the routes have to be moved with the Cloudflare API
+# rather than with wrangler. The order, the API call, and a variant with no
+# window at all are written out in auth/gateway/wrangler.toml. Read that before
+# deploying either side.
+#
+# To roll the whole thing back: PUT the four routes back to
+# `"script":"tweet-fetch"`, `git revert` the commit that stripped auth from
+# index.ts, and deploy this Worker.

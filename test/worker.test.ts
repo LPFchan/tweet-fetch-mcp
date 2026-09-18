@@ -1,0 +1,92 @@
+import { describe, expect, it } from "vitest";
+import worker, { type Env } from "../index";
+
+// The refusal path, which is the one that matters. This Worker holds no route,
+// so in a correct deployment every request it sees has already been through the
+// gateway. These tests are about what happens when that stops being true --
+// because a service that quietly serves unauthenticated traffic when its front
+// door is misconfigured is the exact failure the gateway exists to prevent.
+//
+// Plain vitest rather than @cloudflare/vitest-pool-workers: the entry point is
+// called directly, and nothing on the paths under test needs a workerd runtime,
+// a binding, or the network. The one path that does reach out -- /mcp, which
+// calls fxtwitter -- is deliberately not exercised here.
+
+const env: Env = { FETCH_TIMEOUT_MS: "15000" };
+
+function request(path: string, headers: Record<string, string> = {}): Request {
+  return new Request(`https://tweet.lost.plus${path}`, { headers });
+}
+
+const IDENTITY = {
+  "x-lost-plus-sub": "42",
+  "x-lost-plus-email": "me%40lost.plus",
+  "x-lost-plus-name": "%EC%82%AC%EC%9A%A9%EC%9E%90",
+  "x-lost-plus-role": "user",
+  "x-lost-plus-encoding": "percent-utf8",
+};
+
+describe("without gateway identity headers", () => {
+  for (const path of ["/", "/mcp", "/healthz", "/anything"]) {
+    it(`refuses ${path}`, async () => {
+      const response = await worker.fetch(request(path), env);
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({ error: "no gateway identity" });
+    });
+  }
+
+  it("refuses a POST to /mcp, which is how a real client calls it", async () => {
+    const response = await worker.fetch(
+      new Request("https://tweet.lost.plus/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      }),
+      env,
+    );
+    expect(response.status).toBe(500);
+  });
+
+  it("refuses a caller presenting a bearer token, which it must not validate", async () => {
+    // Before the gateway, this Worker would have called whoami with this. Now
+    // a credential means nothing here: only the gateway's verdict does.
+    const response = await worker.fetch(
+      request("/mcp", { authorization: "Bearer lp_something" }),
+      env,
+    );
+    expect(response.status).toBe(500);
+  });
+
+  it("refuses an identity sent without the encoding declaration", async () => {
+    const { "x-lost-plus-encoding": _, ...unencoded } = IDENTITY;
+    const response = await worker.fetch(request("/", unencoded), env);
+    expect(response.status).toBe(500);
+  });
+
+  it("refuses a partial identity", async () => {
+    const { "x-lost-plus-role": _, ...partial } = IDENTITY;
+    const response = await worker.fetch(request("/", partial), env);
+    expect(response.status).toBe(500);
+  });
+});
+
+describe("with gateway identity headers", () => {
+  it("serves the root document and names the caller it was given", async () => {
+    const response = await worker.fetch(request("/", IDENTITY), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      name: "tweet-fetch-mcp",
+      mcp_path: "/mcp",
+      caller: { sub: "42", email: "me@lost.plus", name: "사용자", role: "user" },
+    });
+  });
+
+  it("404s a path it does not serve", async () => {
+    // Including /healthz and the metadata document, which are the gateway's
+    // now and never reach this Worker in a correct deployment.
+    for (const path of ["/healthz", "/.well-known/oauth-protected-resource/mcp", "/nope"]) {
+      const response = await worker.fetch(request(path, IDENTITY), env);
+      expect(response.status).toBe(404);
+    }
+  });
+});
