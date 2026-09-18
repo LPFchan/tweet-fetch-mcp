@@ -2,12 +2,13 @@
 
 MCP server that converts Twitter/X.com tweet URLs into fxtwitter API JSON.
 
-Two runtimes:
+A Cloudflare Worker (`tweet-fetch`) with no route of its own. It is reached
+only through the service binding `TWEET_FETCH` that the `auth-gateway` Worker
+declares, and holds no state: no D1, KV, R2, or Durable Object. Every tool call
+is one outbound request to `api.fxtwitter.com`.
 
-- **Cloudflare Workers** (root) — the primary runtime. A route-less Worker,
-  reachable only through the service binding the `auth-gateway` Worker declares.
-- **Python** (`python/`) — legacy OCI backend, kept as fallback. Runs behind the
-  machine auth gateway on loopback.
+Until 2026-09-18 the same server ran as a Python container on OCI behind the
+machine gateway; that code was removed once the Worker was verified live.
 
 ## Authentication, and why there is none in this repo
 
@@ -33,8 +34,8 @@ The gateway also owns, for this host: the `WWW-Authenticate` challenge, the RFC
 `/.well-known/oauth-protected-resource/mcp`, CORS and preflight, and `/healthz`.
 None of those are served here.
 
-Scope is `tweet-fetch`, and it now lives in the gateway's route table rather
-than in this repo's configuration.
+Scope is `tweet-fetch`, registered in the gateway's route table
+(`auth/gateway/config/cloudflare.gateway.json`), not in this repo.
 
 ## Tools
 
@@ -45,6 +46,10 @@ than in this repo's configuration.
 - `get_tweet_stats(tweet_url)` — Returns engagement metrics (likes, retweets, replies, bookmarks, quotes, views).
 - `get_thread(tweet_url)` — Returns the author's full self-reply thread (the unrolled thread).
 - `get_replies(tweet_url)` — Returns replies from other users, ranked by likes.
+
+The endpoint is stateless and speaks MCP 2026-07-28 as well as the 2025-era
+revisions. 2026 clients are told to cache `tools/list` and `server/discover`
+for five minutes (`cacheScope: private`).
 
 ## Usage
 
@@ -66,8 +71,24 @@ than in this repo's configuration.
 
 ```
 npm run check    # tsc --noEmit
-npm test         # vitest: identity header parsing, and the refusal path
+npm test         # vitest: identity parsing, refusal path, protocol eras, every tool with fxtwitter stubbed
 ```
 
-Deploying this Worker is sequenced with the gateway's routes. The order, and
-what breaks if it is wrong, is written out in `auth/gateway/wrangler.toml`.
+## Deploy
+
+```
+npm run deploy   # wrangler deploy
+```
+
+Needs a Cloudflare API token in the environment (`CLOUDFLARE_API_TOKEN`). The
+only configuration is `FETCH_TIMEOUT_MS` in `wrangler.toml`; there are no
+secrets.
+
+`wrangler.toml` declares no routes and `workers_dev = false`. Keep it that way:
+the four `tweet.lost.plus` patterns are held by `auth-gateway`, and a deploy
+that adds routes here would take them from the gateway and expose this Worker
+without authentication.
+
+**Rollback** is `git revert` (or checkout of the last good commit) and `npm run
+deploy` again; there is no state to roll back with it. A broken gateway is the
+auth repo's rollback, not this one's.
