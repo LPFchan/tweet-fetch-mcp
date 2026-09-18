@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import worker, { type Env } from "../index";
+import worker from "../index";
+import { IDENTITY, env } from "./helpers";
 
 // The refusal path, which is the one that matters. This Worker holds no route,
 // so in a correct deployment every request it sees has already been through the
@@ -9,25 +10,15 @@ import worker, { type Env } from "../index";
 //
 // Plain vitest rather than @cloudflare/vitest-pool-workers: the entry point is
 // called directly, and nothing on the paths under test needs a workerd runtime,
-// a binding, or the network. The one path that does reach out -- /mcp, which
-// calls fxtwitter -- is deliberately not exercised here.
-
-const env: Env = { FETCH_TIMEOUT_MS: "15000" };
+// a binding, or the network. Tool behavior is in tools.test.ts with fxtwitter
+// stubbed; the protocol surface is in mcp.test.ts.
 
 function request(path: string, headers: Record<string, string> = {}): Request {
   return new Request(`https://tweet.lost.plus${path}`, { headers });
 }
 
-const IDENTITY = {
-  "x-lost-plus-sub": "42",
-  "x-lost-plus-email": "me%40lost.plus",
-  "x-lost-plus-name": "%EC%82%AC%EC%9A%A9%EC%9E%90",
-  "x-lost-plus-role": "user",
-  "x-lost-plus-encoding": "percent-utf8",
-};
-
 describe("without gateway identity headers", () => {
-  for (const path of ["/", "/mcp", "/healthz", "/anything"]) {
+  for (const path of ["/", "/mcp", "/mcp/", "/healthz", "/anything"]) {
     it(`refuses ${path}`, async () => {
       const response = await worker.fetch(request(path), env);
       expect(response.status).toBe(500);
