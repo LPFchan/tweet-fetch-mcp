@@ -50,32 +50,22 @@ describe("without gateway identity headers", () => {
 
   it("refuses an identity sent without the encoding declaration", async () => {
     const { "x-lost-plus-encoding": _, ...unencoded } = IDENTITY;
-    const response = await worker.fetch(request("/", unencoded), env);
+    const response = await worker.fetch(request("/mcp", unencoded), env);
     expect(response.status).toBe(500);
   });
 
   it("refuses a partial identity", async () => {
     const { "x-lost-plus-role": _, ...partial } = IDENTITY;
-    const response = await worker.fetch(request("/", partial), env);
+    const response = await worker.fetch(request("/mcp", partial), env);
     expect(response.status).toBe(500);
   });
 });
 
 describe("with gateway identity headers", () => {
-  it("serves the root document and names the caller it was given", async () => {
-    const response = await worker.fetch(request("/", IDENTITY), env);
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      name: "tweet-fetch-mcp",
-      mcp_path: "/mcp",
-      caller: { sub: "42", email: "me@lost.plus", name: "사용자", role: "user" },
-    });
-  });
-
   it("404s a path it does not serve", async () => {
-    // Including /healthz and the metadata document, which are the gateway's
-    // now and never reach this Worker in a correct deployment.
-    for (const path of ["/healthz", "/.well-known/oauth-protected-resource/mcp", "/nope"]) {
+    // Including `/`, /healthz and the metadata document: the gateway routes
+    // only /mcp here, so nothing else is served.
+    for (const path of ["/", "/healthz", "/.well-known/oauth-protected-resource/mcp", "/nope"]) {
       const response = await worker.fetch(request(path, IDENTITY), env);
       expect(response.status).toBe(404);
     }

@@ -7,12 +7,12 @@
 // challenge, no RFC 9728 metadata document, no CORS, no /healthz. All of those
 // are the gateway's, and a second copy here could only drift from them.
 //
-// What arrives instead is an identity the gateway has already established. See
-// identity.ts.
+// What arrives instead is an identity the gateway has already established,
+// read by @lost-plus/gateway-identity (the shared parser every lost.plus
+// service uses).
+import { identityFrom } from "@lost-plus/gateway-identity";
 import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 import { z } from "zod";
-
-import { identityFrom } from "./identity";
 
 export interface Env {
   FETCH_TIMEOUT_MS: string;
@@ -212,21 +212,13 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // Before routing, not after. There is no path here that serves without an
     // identity, so there is no reason for one to be reachable before the check.
-    const identity = identityFrom(request.headers);
-    if (identity === null) return refused();
+    if (identityFrom(request.headers) === null) return refused();
 
     const url = new URL(request.url);
 
-    if (url.pathname === "/" || url.pathname === "") {
-      return Response.json({
-        name: "tweet-fetch-mcp",
-        runtime: "cloudflare-workers",
-        mcp_path: "/mcp",
-        caller: { sub: identity.sub, email: identity.email, name: identity.name, role: identity.role },
-        tools: TOOL_NAMES,
-      });
-    }
-
+    // Only /mcp. The gateway routes nothing else here (`/` never arrives in
+    // production), so nothing else is served.
+    //
     // `/mcp/` as well as `/mcp`: the gateway forwards the path exactly as it
     // received it, its route covers both spellings, and clients have sent the
     // trailing slash before (the Python server rewrote it for that reason).

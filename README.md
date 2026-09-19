@@ -19,7 +19,9 @@ arrives, someone has already decided the caller may have it.
 
 What arrives is an identity, in five headers the gateway sets:
 `x-lost-plus-sub`, `-email`, `-name`, `-role`, and `x-lost-plus-encoding:
-percent-utf8`. The first four are percent-encoded; `identity.ts` decodes them.
+percent-utf8`. The first four are percent-encoded; the shared
+[`@lost-plus/gateway-identity`](https://github.com/LPFchan/gateway-identity)
+package decodes them.
 The credential itself is stripped by the gateway and never reaches this Worker,
 so there is nothing here to validate and nothing to replay elsewhere.
 
@@ -71,7 +73,7 @@ for five minutes (`cacheScope: private`).
 
 ```
 npm run check    # tsc --noEmit
-npm test         # vitest: identity parsing, refusal path, protocol eras, every tool with fxtwitter stubbed
+npm test         # vitest: refusal path, protocol eras, every tool with fxtwitter stubbed
 ```
 
 ## Deploy
