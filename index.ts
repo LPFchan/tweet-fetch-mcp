@@ -8,9 +8,9 @@
 // are the gateway's, and a second copy here could only drift from them.
 //
 // What arrives instead is an identity the gateway has already established,
-// read by @lost-plus/gateway-identity (the shared parser every lost.plus
+// read by @lpfchan/gateway-identity (the shared parser every lost.plus
 // service uses).
-import { identityFrom } from "@lost-plus/gateway-identity";
+import { identityFrom } from "@lpfchan/gateway-identity";
 import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
