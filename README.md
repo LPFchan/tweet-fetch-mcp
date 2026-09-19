@@ -20,7 +20,7 @@ arrives, someone has already decided the caller may have it.
 What arrives is an identity, in five headers the gateway sets:
 `x-lost-plus-sub`, `-email`, `-name`, `-role`, and `x-lost-plus-encoding:
 percent-utf8`. The first four are percent-encoded; the shared
-[`@lpfchan/gateway-identity`](https://github.com/LPFchan/gateway-identity)
+[`@lpfchan/gateway-identity`](https://github.com/LPFchan/auth/tree/main/packages/gateway-identity)
 package decodes them.
 The credential itself is stripped by the gateway and never reaches this Worker,
 so there is nothing here to validate and nothing to replay elsewhere.
