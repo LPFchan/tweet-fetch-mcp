@@ -79,10 +79,12 @@ npm test         # vitest: refusal path, protocol eras, every tool with fxtwitte
 ## Deploy
 
 ```
-npm run deploy   # wrangler deploy
+npm run deploy   # passage run --env CLOUDFLARE_API_TOKEN=infra/CF_MASTER_TOKEN -- wrangler deploy
 ```
 
-Needs a Cloudflare API token in the environment (`CLOUDFLARE_API_TOKEN`). The
+The deploy token comes from passage at deploy time (`infra` /
+`CF_MASTER_TOKEN`, through the `passage` setup module); an already-exported
+`CLOUDFLARE_API_TOKEN` wins if one is set. The
 only configuration is `FETCH_TIMEOUT_MS` in `wrangler.toml`; there are no
 secrets.
 
