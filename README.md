@@ -5,7 +5,8 @@ MCP server that converts Twitter/X.com tweet URLs into fxtwitter API JSON.
 A Cloudflare Worker (`tweet-fetch`) with no route of its own. It is reached
 only through the service binding `TWEET_FETCH` that the `auth-gateway` Worker
 declares, and holds no state: no D1, KV, R2, or Durable Object. Every tool call
-is one outbound request to `api.fxtwitter.com`.
+is one outbound request to `api.fxtwitter.com`'s v2 conversation endpoint, plus
+one to the v1 status endpoint if that fails (see below).
 
 Until 2026-09-18 the same server ran as a Python container on OCI behind the
 machine gateway; that code was removed once the Worker was verified live.
@@ -48,6 +49,12 @@ Scope is `tweet-fetch`, registered in the gateway's route table
 - `get_tweet_stats(tweet_url)` — Returns engagement metrics (likes, retweets, replies, bookmarks, quotes, views).
 - `get_thread(tweet_url)` — Returns the author's full self-reply thread (the unrolled thread).
 - `get_replies(tweet_url)` — Returns replies from other users, ranked by likes.
+
+fxtwitter answers 404 whenever its own fetch from X fails, not only for deleted
+tweets. So when v2 fails, every tool except `get_thread` and `get_replies`
+retries once on v1 (`/status/{id}`), which has the tweet but no thread or
+replies. `fetch_tweet` then returns `fallback: "v1"` with `thread` and
+`replies` set to null.
 
 The endpoint is stateless and speaks MCP 2026-07-28 as well as the 2025-era
 revisions. 2026 clients are told to cache `tools/list` and `server/discover`

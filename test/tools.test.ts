@@ -143,26 +143,71 @@ describe("failures", () => {
     reply = () => new Response("nope", { status: 503 });
     const result = await call("fetch_tweet", "https://x.com/someone/status/1234567890");
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toBe("fxtwitter HTTP 503");
+    expect(result.content[0].text).toBe("fxtwitter HTTP 503 (v1 fallback: fxtwitter HTTP 503)");
   });
 
   it("reports an fxtwitter-level error by its message", async () => {
     reply = () => Response.json({ code: 404, message: "NOT_FOUND" });
     const result = await call("fetch_tweet", "https://x.com/someone/status/1234567890");
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toBe("fxtwitter API error: NOT_FOUND");
+    expect(result.content[0].text).toBe("fxtwitter API error: NOT_FOUND (v1 fallback: fxtwitter API error: NOT_FOUND)");
   });
 
   it("says 'unknown' when fxtwitter gives no message", async () => {
     reply = () => Response.json({ code: 500 });
     const result = await call("fetch_tweet", "https://x.com/someone/status/1234567890");
-    expect(result.content[0].text).toBe("fxtwitter API error: unknown");
+    expect(result.content[0].text).toBe("fxtwitter API error: unknown (v1 fallback: fxtwitter API error: unknown)");
   });
 
   it("does not crash on a non-JSON upstream body", async () => {
     reply = () => new Response("<html>", { status: 200 });
     const result = await call("fetch_tweet", "https://x.com/someone/status/1234567890");
     expect(result.isError).toBe(true);
+  });
+});
+
+describe("v1 fallback", () => {
+  const URL = "https://x.com/someone/status/1234567890";
+  const V1 = { code: 200, message: "OK", tweet: { ...CONVERSATION.status, author: CONVERSATION.author } };
+
+  // v2 answers the way it did in production: a 404 for a tweet that exists.
+  beforeEach(() => {
+    reply = () =>
+      calls.at(-1)!.url.includes("/2/conversation/") ? new Response("", { status: 404 }) : Response.json(V1);
+  });
+
+  it("retries on the v1 status endpoint and answers in v2's shape", async () => {
+    expect(parsed(await call("fetch_tweet", URL))).toEqual({
+      code: 200,
+      fallback: "v1",
+      status: V1.tweet,
+      author: CONVERSATION.author,
+      thread: null,
+      replies: null,
+    });
+    expect(calls.map((c) => c.url)).toEqual([
+      "https://api.fxtwitter.com/2/conversation/1234567890",
+      "https://api.fxtwitter.com/status/1234567890",
+    ]);
+    expect(new Headers(calls[1]!.init?.headers).get("user-agent")).toMatch(/Safari/);
+    expect(calls[1]!.init?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("serves text, media, author and stats from v1", async () => {
+    expect((await call("get_tweet_text", URL)).content[0].text).toBe("hello world");
+    expect(parsed(await call("get_tweet_media", URL))).toHaveLength(2);
+    expect(parsed(await call("get_tweet_author", URL))).toEqual(CONVERSATION.author);
+    expect(parsed(await call("get_tweet_stats", URL))).toMatchObject({ likes: 10, retweets: 3 });
+  });
+
+  it("does not fall back for get_thread or get_replies", async () => {
+    for (const name of ["get_thread", "get_replies"]) {
+      calls = [];
+      const result = await call(name, URL);
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe("fxtwitter HTTP 404");
+      expect(calls).toHaveLength(1);
+    }
   });
 });
 

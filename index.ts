@@ -33,11 +33,8 @@ export function fetchTimeoutMs(env: Env): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_FETCH_TIMEOUT_MS;
 }
 
-async function fetchConversation(env: Env, tweetUrl: string): Promise<any> {
-  const match = TWEET_URL_RE.exec(tweetUrl);
-  if (!match) throw new Error("Invalid tweet URL: " + tweetUrl);
-  const statusId = match[2];
-  const resp = await fetch("https://api.fxtwitter.com/2/conversation/" + statusId, {
+async function fxtwitter(env: Env, url: string): Promise<any> {
+  const resp = await fetch(url, {
     headers: { "user-agent": USER_AGENT },
     signal: AbortSignal.timeout(fetchTimeoutMs(env)),
   });
@@ -47,6 +44,31 @@ async function fetchConversation(env: Env, tweetUrl: string): Promise<any> {
     throw new Error("fxtwitter API error: " + (data.message ?? "unknown"));
   }
   return data;
+}
+
+/**
+ * The v2 conversation document. With `fallback`, a failed v2 call retries on
+ * the v1 status endpoint and answers in v2's shape with no thread or replies.
+ * fxtwitter answers 404 whenever its own fetch from X fails, not only when the
+ * tweet is gone, and v1 is a lighter fetch that often still succeeds.
+ * get_thread and get_replies do not take it: v1 has neither, and an empty list
+ * would read as "none" rather than "unavailable".
+ */
+async function fetchConversation(env: Env, tweetUrl: string, fallback = false): Promise<any> {
+  const match = TWEET_URL_RE.exec(tweetUrl);
+  if (!match) throw new Error("Invalid tweet URL: " + tweetUrl);
+  const statusId = match[2];
+  try {
+    return await fxtwitter(env, "https://api.fxtwitter.com/2/conversation/" + statusId);
+  } catch (v2Error) {
+    if (!fallback) throw v2Error;
+    try {
+      const { tweet } = await fxtwitter(env, "https://api.fxtwitter.com/status/" + statusId);
+      return { code: 200, fallback: "v1", status: tweet, author: tweet.author, thread: null, replies: null };
+    } catch (v1Error) {
+      throw new Error(`${(v2Error as Error).message} (v1 fallback: ${(v1Error as Error).message})`);
+    }
+  }
 }
 
 // --- MCP server --------------------------------------------------------------
@@ -87,10 +109,10 @@ export function buildServer(env: Env): McpServer {
     "fetch_tweet",
     {
       description:
-        "Fetch tweet data from a Twitter/X.com URL using the fxtwitter API. Accepts x.com and twitter.com URLs including /photo/N suffixes. Returns the full v2 conversation response (status, thread, replies, author, cursor).",
+        "Fetch tweet data from a Twitter/X.com URL using the fxtwitter API. Accepts x.com and twitter.com URLs including /photo/N suffixes. Returns the full v2 conversation response (status, thread, replies, author, cursor). If v2 fails, falls back to the v1 status endpoint: `fallback: \"v1\"` is set and thread and replies are null.",
       inputSchema: z.object({ tweet_url: tweetUrlParam }),
     },
-    async ({ tweet_url }) => text(await fetchConversation(env, tweet_url)),
+    async ({ tweet_url }) => text(await fetchConversation(env, tweet_url, true)),
   );
 
   server.registerTool(
@@ -100,7 +122,7 @@ export function buildServer(env: Env): McpServer {
       inputSchema: z.object({ tweet_url: tweetUrlParam }),
     },
     async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
+      const data = await fetchConversation(env, tweet_url, true);
       return text(data.status.text);
     },
   );
@@ -113,7 +135,7 @@ export function buildServer(env: Env): McpServer {
       inputSchema: z.object({ tweet_url: tweetUrlParam }),
     },
     async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
+      const data = await fetchConversation(env, tweet_url, true);
       const all = data.status?.media?.all ?? [];
       return text(all.map((m: any) => ({ type: m.type, url: m.url, width: m.width, height: m.height })));
     },
@@ -127,7 +149,7 @@ export function buildServer(env: Env): McpServer {
       inputSchema: z.object({ tweet_url: tweetUrlParam }),
     },
     async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
+      const data = await fetchConversation(env, tweet_url, true);
       return text(data.author);
     },
   );
@@ -140,7 +162,7 @@ export function buildServer(env: Env): McpServer {
       inputSchema: z.object({ tweet_url: tweetUrlParam }),
     },
     async ({ tweet_url }) => {
-      const data = await fetchConversation(env, tweet_url);
+      const data = await fetchConversation(env, tweet_url, true);
       const s = data.status;
       return text({
         likes: s.likes ?? 0,
